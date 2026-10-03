@@ -5,8 +5,10 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Botiquín Compartido</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <!-- Librería para escanear con la cámara -->
+  <!-- Escáner de Barras -->
   <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <!-- OCR Tesseract.js -->
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
   <style>
     input[type=number]::-webkit-inner-spin-button,
     input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
@@ -26,27 +28,42 @@
     </div>
   </header>
 
-  <!-- Modal / Overlay de la Cámara -->
-  <div id="scanner-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex-col items-center justify-center p-4">
+  <!-- Modal / Visor de la Cámara -->
+  <div id="camera-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex-col items-center justify-center p-4">
     <div class="bg-white rounded-2xl p-4 w-full max-w-sm flex flex-col items-center shadow-xl">
       <div class="w-full flex justify-between items-center mb-3">
-        <h3 class="font-bold text-slate-800 text-sm" id="scanner-title">Escanear código</h3>
-        <button id="close-scanner-btn" class="text-slate-400 hover:text-slate-700 text-lg font-bold">✕</button>
+        <h3 class="font-bold text-slate-800 text-sm" id="camera-title">Cámara</h3>
+        <button id="close-camera-btn" class="text-slate-400 hover:text-slate-700 text-lg font-bold">✕</button>
       </div>
-      <div id="reader" class="w-full rounded-lg overflow-hidden bg-black"></div>
-      <p class="text-xs text-slate-500 mt-3 text-center">Apuntá al código de barras (EAN-13 / UPC) de la caja.</p>
+
+      <!-- Contenedor lector barras -->
+      <div id="barcode-reader-container" class="w-full rounded-lg overflow-hidden bg-black">
+        <div id="reader"></div>
+      </div>
+
+      <!-- Contenedor visor OCR -->
+      <div id="ocr-container" class="w-full hidden flex-col items-center">
+        <video id="ocr-video" autoplay playsinline class="w-full rounded-lg bg-black object-cover max-h-60"></video>
+        <canvas id="ocr-canvas" class="hidden"></canvas>
+        <button id="btn-capture-ocr" class="mt-3 w-full py-2.5 bg-teal-600 hover:bg-teal-700 text-white text-sm font-semibold rounded-lg shadow active:scale-95 transition-transform flex items-center justify-center gap-2">
+          📸 Capturar y procesar texto
+        </button>
+        <p id="ocr-status" class="text-xs text-slate-500 mt-2 text-center h-4"></p>
+      </div>
+
+      <p id="camera-help" class="text-xs text-slate-500 mt-3 text-center"></p>
     </div>
   </div>
 
   <main class="max-w-2xl mx-auto p-4 space-y-5">
 
-    <!-- Buscador con botón de escaneo -->
+    <!-- Buscador -->
     <div class="flex gap-2">
       <div class="relative flex-1">
         <input
           type="text"
           id="search-input"
-          placeholder="🔍 Buscar por nombre, síntoma o código..."
+          placeholder="🔍 Buscar medicamento, síntoma o droga..."
           class="w-full p-3 rounded-xl border border-slate-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white text-sm"
         />
       </div>
@@ -55,48 +72,57 @@
         title="Escanear caja para buscar"
         class="bg-teal-600 hover:bg-teal-700 text-white px-4 rounded-xl flex items-center justify-center shadow-sm active:scale-95 transition-transform"
       >
-        📷
+        🏷️
       </button>
     </div>
 
     <!-- Formulario para agregar -->
     <details id="details-form" class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm group">
       <summary class="font-semibold text-teal-700 cursor-pointer list-none flex justify-between items-center select-none">
-        <span class="flex items-center gap-2">➕ Agregar medicamento</span>
+        <span class="flex items-center gap-2">➕ Cargar nuevo medicamento</span>
         <span class="text-xs text-slate-400 group-open:rotate-180 transition-transform">▼</span>
       </summary>
+
+      <!-- Botonera de captura rápida -->
+      <div class="grid grid-cols-2 gap-2 mt-4 pt-3 border-t border-slate-100">
+        <button type="button" id="btn-scan-ocr" class="py-2 px-3 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-2">
+          <span>📷</span> Leer blíster (OCR)
+        </button>
+        <button type="button" id="btn-scan-barcode" class="py-2 px-3 bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-300 rounded-xl text-xs font-semibold flex items-center justify-center gap-2">
+          <span>🏷️</span> Código de barras
+        </button>
+      </div>
       
       <form id="med-form" class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
         
-        <!-- Código de barras -->
-        <div class="sm:col-span-2">
-          <label class="block text-slate-600 font-medium mb-1">Código de barras</label>
-          <div class="flex gap-2">
-            <input type="text" id="codigo" placeholder="Ej: 7791234567890" class="flex-1 p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
-            <button type="button" id="btn-scan-input" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg font-medium text-xs flex items-center gap-1 border border-slate-300">
-              📷 Escanear
-            </button>
-          </div>
-        </div>
-
-        <div class="sm:col-span-2">
-          <label class="block text-slate-600 font-medium mb-1">Nombre</label>
-          <input required type="text" id="nombre" placeholder="Ej: Paracetamol" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
+        <!-- Nombre con Autocompletado Vademécum -->
+        <div class="sm:col-span-2 relative">
+          <label class="block text-slate-600 font-medium mb-1">Nombre Comercial o Droga</label>
+          <input 
+            required 
+            type="text" 
+            id="nombre" 
+            autocomplete="off"
+            placeholder="Escribí ej: Ibupirac, Paracetamol, Taural..." 
+            class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" 
+          />
+          <!-- Lista flotante de sugerencias -->
+          <ul id="sugerencias-vademecum" class="absolute z-30 left-0 right-0 bg-white border border-slate-200 rounded-lg shadow-lg mt-1 max-h-48 overflow-y-auto hidden"></ul>
         </div>
 
         <div>
-          <label class="block text-slate-600 font-medium mb-1">Presentación</label>
-          <input type="text" id="presentacion" placeholder="Ej: 500 mg, Jarabe" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
+          <label class="block text-slate-600 font-medium mb-1">Presentación / Gramaje</label>
+          <input type="text" id="presentacion" placeholder="Ej: Comprimidos 400mg, Jarabe" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
         </div>
 
         <div>
           <label class="block text-slate-600 font-medium mb-1">Ubicación</label>
-          <input type="text" id="ubicacion" placeholder="Ej: Cajón baño, Estante cocina" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
+          <input type="text" id="ubicacion" placeholder="Ej: Cajón baño, Botiquín cocina" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
         </div>
 
         <div>
-          <label class="block text-slate-600 font-medium mb-1">Stock (unidades)</label>
-          <input required type="number" id="stock" min="0" value="1" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
+          <label class="block text-slate-600 font-medium mb-1">Stock (pastillas o frascos)</label>
+          <input required type="number" id="stock" min="0" value="10" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
         </div>
 
         <div>
@@ -105,9 +131,11 @@
         </div>
 
         <div class="sm:col-span-2">
-          <label class="block text-slate-600 font-medium mb-1">Indicaciones / Síntomas</label>
-          <input type="text" id="notas" placeholder="Ej: Fiebre, dolor muscular" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
+          <label class="block text-slate-600 font-medium mb-1">Indicaciones / Para qué sirve</label>
+          <input type="text" id="notas" placeholder="Ej: Dolores, fiebre, antiinflamatorio" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
         </div>
+
+        <input type="hidden" id="codigo" />
 
         <div class="sm:col-span-2 mt-2">
           <button type="submit" class="w-full py-2.5 bg-teal-600 text-white font-medium rounded-lg hover:bg-teal-700 transition-colors shadow">
@@ -117,14 +145,14 @@
       </form>
     </details>
 
-    <!-- Lista -->
+    <!-- Listado -->
     <section>
       <div class="flex justify-between items-center mb-3">
-        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500">Medicamentos guardados</h2>
+        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500">Stock disponible</h2>
         <span id="med-count" class="text-xs font-semibold text-slate-400">0 ítems</span>
       </div>
       <div id="med-list" class="space-y-3">
-        <p class="text-sm text-slate-400 text-center py-8">Cargando datos...</p>
+        <p class="text-sm text-slate-400 text-center py-8">Cargando botiquín...</p>
       </div>
     </section>
 
@@ -145,7 +173,7 @@
       orderBy
     } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
 
-    // --- REEMPLAZÁ CON TU CONFIGURACIÓN DE FIREBASE ---
+    // --- REEMPLAZÁ CON TUS CREDENCIALES DE FIREBASE ---
     const firebaseConfig = {
       apiKey: "TU_API_KEY",
       authDomain: "TU_PROYECTO.firebaseapp.com",
@@ -161,9 +189,82 @@
 
     let medicamentosLocales = [];
     let html5QrCode = null;
-    let modoScanner = null; // 'search' o 'form'
+    let ocrStream = null;
 
-    // Estado del vencimiento
+    // --- BASE DE DATOS LOCAL: VADEMÉCUM COMÚN DE ARGENTINA ---
+    const VADEMECUM_ARG = [
+      { nombre: "Ibupirac (Ibuprofeno)", presentacion: "Comprimidos 400 mg", notas: "Dolor, fiebre, inflamación" },
+      { nombre: "Ibupirac (Ibuprofeno)", presentacion: "Comprimidos 600 mg", notas: "Dolor e inflamación aguda" },
+      { nombre: "Paracetamol", presentacion: "Comprimidos 500 mg", notas: "Fiebre, dolor de cabeza" },
+      { nombre: "Tafirol (Paracetamol)", presentacion: "Comprimidos 1 g", notas: "Fiebre, dolores musculares" },
+      { nombre: "Amoxidal (Amoxicilina)", presentacion: "Comprimidos 500 mg", notas: "Antibiótico bacteriano" },
+      { nombre: "Amoxidal Dúo", presentacion: "Comprimidos 875 mg", notas: "Antibiótico de amplio espectro" },
+      { nombre: "Taural (Ranitidina / Famotidina)", presentacion: "Comprimidos 20 mg", notas: "Antiácido, acidez estomacal" },
+      { nombre: "Omeprazol", presentacion: "Cápsulas 20 mg", notas: "Protector gástrico matutino" },
+      { nombre: "Sertal Compuesto", presentacion: "Gotas o comprimidos", notas: "Espasmos digestivos y retorcijones" },
+      { nombre: "Buscapina", presentacion: "Comprimidos recubiertos", notas: "Antiespasmódico abdominal" },
+      { nombre: "Clonagin (Clonazepam)", presentacion: "Comprimidos 0.5 mg", notas: "Ansiolítico" },
+      { nombre: "Alplax (Alprazolam)", presentacion: "Comprimidos 0.5 mg", notas: "Ansiolítico / crisis de angustia" },
+      { nombre: "Losartán", presentacion: "Comprimidos 50 mg", notas: "Presión arterial" },
+      { nombre: "Enalapril", presentacion: "Comprimidos 10 mg", notas: "Presión arterial" },
+      { nombre: "Loratadina", presentacion: "Comprimidos 10 mg", notas: "Antialérgico, rinitis" },
+      { nombre: "Aerotina (Loratadina)", presentacion: "Comprimidos 10 mg", notas: "Antialérgico" },
+      { nombre: "Dexalergin", presentacion: "Gotas nasales / colirio", notas: "Descongestivo y antialérgico" },
+      { nombre: "Diclofenac", presentacion: "Comprimidos 50 mg", notas: "Dolor articular o lumbar" },
+      { nombre: "Voltaren (Diclofenac)", presentacion: "Gel tópico 50g", notas: "Golpes musculares, esguinces" },
+      { nombre: "Dorixina Flam", presentacion: "Comprimidos", notas: "Antiinflamatorio y analgésico potente" },
+      { nombre: "Actron (Ibuprofeno cápsulas blandas)", presentacion: "Cápsulas 400 mg", notas: "Alivio rápido de dolor" },
+      { nombre: "Gripaben / Qura Plus", presentacion: "Comprimidos", notas: "Antigripal, congestión y fiebre" }
+    ];
+
+    // Autocompletado Vademécum
+    const inputNombre = document.getElementById("nombre");
+    const sugerenciasUl = document.getElementById("sugerencias-vademecum");
+
+    inputNombre.addEventListener("input", () => {
+      const q = inputNombre.value.toLowerCase().trim();
+      if (q.length < 2) {
+        sugerenciasUl.classList.add("hidden");
+        return;
+      }
+
+      const coincidencias = VADEMECUM_ARG.filter(item => 
+        item.nombre.toLowerCase().includes(q) || 
+        item.presentacion.toLowerCase().includes(q) ||
+        item.notas.toLowerCase().includes(q)
+      ).slice(0, 5);
+
+      if (coincidencias.length === 0) {
+        sugerenciasUl.classList.add("hidden");
+        return;
+      }
+
+      sugerenciasUl.innerHTML = coincidencias.map((item, idx) => `
+        <li class="p-2.5 hover:bg-teal-50 cursor-pointer border-b border-slate-100 last:border-0" data-idx="${idx}">
+          <div class="font-semibold text-slate-800 text-xs">${item.nombre}</div>
+          <div class="text-[11px] text-slate-500">${item.presentacion} · <span class="italic text-teal-700">${item.notas}</span></div>
+        </li>
+      `).join("");
+      sugerenciasUl.classList.remove("hidden");
+
+      sugerenciasUl.querySelectorAll("li").forEach((li, idx) => {
+        li.addEventListener("click", () => {
+          const item = coincidencias[idx];
+          inputNombre.value = item.nombre;
+          document.getElementById("presentacion").value = item.presentacion;
+          document.getElementById("notas").value = item.notas;
+          sugerenciasUl.classList.add("hidden");
+        });
+      });
+    });
+
+    document.addEventListener("click", (e) => {
+      if (!inputNombre.contains(e.target) && !sugerenciasUl.contains(e.target)) {
+        sugerenciasUl.classList.add("hidden");
+      }
+    });
+
+    // Helper: Evaluar vencimiento
     function getEstadoVencimiento(fechaISO) {
       if (!fechaISO) return { color: "slate", label: "Sin fecha" };
       const hoy = new Date();
@@ -171,13 +272,9 @@
       const vencimiento = new Date(fechaISO + "T00:00:00");
       const diffDias = Math.ceil((vencimiento - hoy) / (1000 * 60 * 60 * 24));
 
-      if (diffDias < 0) {
-        return { color: "red", label: `Vencido` };
-      } else if (diffDias <= 60) {
-        return { color: "amber", label: `Vence en ${diffDias} d` };
-      } else {
-        return { color: "emerald", label: `Vigente (${fechaISO.slice(0, 7)})` };
-      }
+      if (diffDias < 0) return { color: "red", label: "Vencido" };
+      if (diffDias <= 60) return { color: "amber", label: `Vence en ${diffDias} d` };
+      return { color: "emerald", label: `Vigente (${fechaISO.slice(0, 7)})` };
     }
 
     // Renderizado reactivo
@@ -265,7 +362,6 @@
       document.getElementById("details-form").removeAttribute("open");
     });
 
-    // Stock y borrado
     window.cambiarStock = async (id, delta) => {
       const item = medicamentosLocales.find(m => m.id === id);
       if (!item) return;
@@ -281,62 +377,158 @@
 
     document.getElementById("search-input").addEventListener("input", renderList);
 
-    // --- LÓGICA DE ESCANEO DE CÓDIGO DE BARRAS ---
-    async function iniciarEscaner(modo) {
-      modoScanner = modo;
-      const modal = document.getElementById("scanner-modal");
-      modal.classList.remove("hidden");
-      modal.classList.add("flex");
+    // --- GESTIÓN DE CÁMARA (CÓDIGO DE BARRAS & OCR) ---
+    const modal = document.getElementById("camera-modal");
+    const barcodeBox = document.getElementById("barcode-reader-container");
+    const ocrBox = document.getElementById("ocr-container");
+    const cameraTitle = document.getElementById("camera-title");
+    const cameraHelp = document.getElementById("camera-help");
+    const ocrStatus = document.getElementById("ocr-status");
 
-      if (!html5QrCode) {
-        html5QrCode = new Html5Qrcode("reader");
-      }
-
-      const config = {
-        fps: 10,
-        qrbox: { width: 250, height: 150 }, // Rectangular para código de barras
-        formatsToSupport: [
-          Html5QrcodeSupportedFormats.EAN_13,
-          Html5QrcodeSupportedFormats.EAN_8,
-          Html5QrcodeSupportedFormats.UPC_A,
-          Html5QrcodeSupportedFormats.CODE_128
-        ]
-      };
-
-      try {
-        await html5QrCode.start(
-          { facingMode: "environment" }, // Cámara trasera
-          config,
-          (decodedText) => {
-            detenerEscaner();
-            if (modoScanner === "search") {
-              const input = document.getElementById("search-input");
-              input.value = decodedText;
-              renderList();
-            } else if (modoScanner === "form") {
-              document.getElementById("codigo").value = decodedText;
-              document.getElementById("details-form").setAttribute("open", "true");
-            }
-          }
-        );
-      } catch (err) {
-        alert("No se pudo acceder a la cámara. Verificá los permisos del navegador.");
-        detenerEscaner();
-      }
-    }
-
-    async function detenerEscaner() {
+    function cerrarCamaras() {
       if (html5QrCode && html5QrCode.isScanning) {
-        await html5QrCode.stop();
+        html5QrCode.stop().catch(()=>{});
       }
-      const modal = document.getElementById("scanner-modal");
+      if (ocrStream) {
+        ocrStream.getTracks().forEach(track => track.stop());
+        ocrStream = null;
+      }
       modal.classList.add("hidden");
       modal.classList.remove("flex");
     }
 
-    document.getElementById("btn-scan-search").addEventListener("click", () => iniciarEscaner("search"));
-    document.getElementById("btn-scan-input").addEventListener("click", () => iniciarEscaner("form"));
-    document.getElementById("close-scanner-btn").addEventListener("click", detenerEscaner);
+    document.getElementById("close-camera-btn").addEventListener("click", cerrarCamaras);
+
+    // 1. Iniciar lector de Barras
+    async function abrirLectorBarras(modo) {
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      barcodeBox.classList.remove("hidden");
+      ocrBox.classList.add("hidden");
+      cameraTitle.textContent = "Escaneo de Código de Barras";
+      cameraHelp.textContent = "Apuntá al código de barras de la caja.";
+
+      try {
+        if (!html5QrCode) html5QrCode = new Html5Qrcode("reader");
+        const devices = await Html5Qrcode.getCameras();
+        if (!devices.length) throw new Error("No hay cámaras disponibles");
+
+        const camTrasera = devices.find(d => /back|rear|trasera/i.test(d.label)) || devices[devices.length - 1];
+
+        await html5QrCode.start(
+          camTrasera.id,
+          { fps: 10, qrbox: { width: 250, height: 150 } },
+          (code) => {
+            cerrarCamaras();
+            if (modo === "search") {
+              document.getElementById("search-input").value = code;
+              renderList();
+            } else {
+              document.getElementById("codigo").value = code;
+              document.getElementById("details-form").setAttribute("open", "true");
+            }
+          },
+          () => {}
+        );
+      } catch (err) {
+        alert("Error de cámara: " + err.message);
+        cerrarCamaras();
+      }
+    }
+
+    // 2. Iniciar escáner OCR
+    async function abrirLectorOCR() {
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+      barcodeBox.classList.add("hidden");
+      ocrBox.classList.remove("hidden");
+      ocrBox.classList.add("flex");
+      cameraTitle.textContent = "Leer texto en Blíster (OCR)";
+      cameraHelp.textContent = "Enfocá con buena luz el nombre o la fecha troquelada.";
+      ocrStatus.textContent = "";
+
+      try {
+        const constraints = {
+          video: {
+            facingMode: { ideal: "environment" },
+            width: { ideal: 1280 }
+          }
+        };
+        ocrStream = await navigator.mediaDevices.getUserMedia(constraints);
+        const video = document.getElementById("ocr-video");
+        video.srcObject = ocrStream;
+      } catch (err) {
+        alert("No se pudo iniciar la cámara para OCR: " + err.message);
+        cerrarCamaras();
+      }
+    }
+
+    // Capturar y procesar texto con Tesseract
+    document.getElementById("btn-capture-ocr").addEventListener("click", async () => {
+      const video = document.getElementById("ocr-video");
+      const canvas = document.getElementById("ocr-canvas");
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      const ctx = canvas.getContext("2d");
+      ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+
+      ocrStatus.textContent = "⏳ Analizando texto con OCR...";
+      document.getElementById("btn-capture-ocr").disabled = true;
+
+      try {
+        const { data: { text } } = await Tesseract.recognize(canvas, 'spa');
+        const limpio = text.toLowerCase();
+
+        // 1. Buscar coincidencias en el Vademécum
+        let detectado = null;
+        for (const item of VADEMECUM_ARG) {
+          const base = item.nombre.toLowerCase().split(" ")[0].replace(/[^a-z]/g, "");
+          if (limpio.includes(base)) {
+            detectado = item;
+            break;
+          }
+        }
+
+        // 2. Buscar patrón de fecha de vencimiento (ej: 08/27, 08/2027, VTO: 11/26)
+        const matchFecha = text.match(/(?:vto|venc|exp)?\s*[:.]?\s*(\d{2})[\/\.-](\d{2,4})/i);
+        let vencISO = null;
+        if (matchFecha) {
+          let mes = matchFecha[1];
+          let anio = matchFecha[2];
+          if (anio.length === 2) anio = "20" + anio;
+          // Asumir último día del mes aproximado o día 28
+          vencISO = `${anio}-${mes.padStart(2, "0")}-28`;
+        }
+
+        cerrarCamaras();
+        document.getElementById("details-form").setAttribute("open", "true");
+
+        if (detectado) {
+          inputNombre.value = detectado.nombre;
+          document.getElementById("presentacion").value = detectado.presentacion;
+          document.getElementById("notas").value = detectado.notas;
+        } else {
+          // Extraer la primera línea legible si no coincidió en vademécum
+          const primerLinea = text.split("\n").map(l => l.trim()).filter(l => l.length > 3)[0] || "";
+          inputNombre.value = primerLinea.toUpperCase();
+        }
+
+        if (vencISO) {
+          document.getElementById("vencimiento").value = vencISO;
+        }
+
+      } catch (err) {
+        alert("No se pudo leer el texto. Intentá enfocar más cerca o con más luz.");
+      } finally {
+        document.getElementById("btn-capture-ocr").disabled = false;
+        ocrStatus.textContent = "";
+      }
+    });
+
+    // Eventos botones
+    document.getElementById("btn-scan-search").addEventListener("click", () => abrirLectorBarras("search"));
+    document.getElementById("btn-scan-barcode").addEventListener("click", () => abrirLectorBarras("form"));
+    document.getElementById("btn-scan-ocr").addEventListener("click", abrirLectorOCR);
   </script>
 </body>
 </html>
