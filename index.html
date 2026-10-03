@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Botiquín Compartido</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <!-- Librería para escanear con la cámara -->
+  <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+  <style>
+    input[type=number]::-webkit-inner-spin-button,
+    input[type=number]::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900 min-h-screen pb-16">
+
+  <!-- Header -->
+  <header class="bg-teal-700 text-white p-4 shadow-md sticky top-0 z-20">
+    <div class="max-w-2xl mx-auto flex items-center justify-between">
+      <h1 class="text-xl font-bold flex items-center gap-2">
+        <span>💊</span> Botiquín en Casa
+      </h1>
+      <span class="text-xs bg-teal-800 px-2.5 py-1 rounded-full text-teal-100">
+        Sincronizado
+      </span>
+    </div>
+  </header>
+
+  <!-- Modal / Overlay de la Cámara -->
+  <div id="scanner-modal" class="fixed inset-0 bg-black/80 z-50 hidden flex-col items-center justify-center p-4">
+    <div class="bg-white rounded-2xl p-4 w-full max-w-sm flex flex-col items-center shadow-xl">
+      <div class="w-full flex justify-between items-center mb-3">
+        <h3 class="font-bold text-slate-800 text-sm" id="scanner-title">Escanear código</h3>
+        <button id="close-scanner-btn" class="text-slate-400 hover:text-slate-700 text-lg font-bold">✕</button>
+      </div>
+      <div id="reader" class="w-full rounded-lg overflow-hidden bg-black"></div>
+      <p class="text-xs text-slate-500 mt-3 text-center">Apuntá al código de barras (EAN-13 / UPC) de la caja.</p>
+    </div>
+  </div>
+
+  <main class="max-w-2xl mx-auto p-4 space-y-5">
+
+    <!-- Buscador con botón de escaneo -->
+    <div class="flex gap-2">
+      <div class="relative flex-1">
+        <input
+          type="text"
+          id="search-input"
+          placeholder="🔍 Buscar por nombre, síntoma o código..."
+          class="w-full p-3 rounded-xl border border-slate-300 shadow-sm focus:outline-none focus:ring-2 focus:ring-teal-600 bg-white text-sm"
+        />
+      </div>
+      <button 
+        id="btn-scan-search" 
+        title="Escanear caja para buscar"
+        class="bg-teal-600 hover:bg-teal-700 text-white px-4 rounded-xl flex items-center justify-center shadow-sm active:scale-95 transition-transform"
+      >
+        📷
+      </button>
+    </div>
+
+    <!-- Formulario para agregar -->
+    <details id="details-form" class="bg-white border border-slate-200 rounded-2xl p-4 shadow-sm group">
+      <summary class="font-semibold text-teal-700 cursor-pointer list-none flex justify-between items-center select-none">
+        <span class="flex items-center gap-2">➕ Agregar medicamento</span>
+        <span class="text-xs text-slate-400 group-open:rotate-180 transition-transform">▼</span>
+      </summary>
+      
+      <form id="med-form" class="mt-4 grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+        
+        <!-- Código de barras -->
+        <div class="sm:col-span-2">
+          <label class="block text-slate-600 font-medium mb-1">Código de barras</label>
+          <div class="flex gap-2">
+            <input type="text" id="codigo" placeholder="Ej: 7791234567890" class="flex-1 p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
+            <button type="button" id="btn-scan-input" class="bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-2 rounded-lg font-medium text-xs flex items-center gap-1 border border-slate-300">
+              📷 Escanear
+            </button>
+          </div>
+        </div>
+
+        <div class="sm:col-span-2">
+          <label class="block text-slate-600 font-medium mb-1">Nombre</label>
+          <input required type="text" id="nombre" placeholder="Ej: Paracetamol" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
+        </div>
+
+        <div>
+          <label class="block text-slate-600 font-medium mb-1">Presentación</label>
+          <input type="text" id="presentacion" placeholder="Ej: 500 mg, Jarabe" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
+        </div>
+
+        <div>
+          <label class="block text-slate-600 font-medium mb-1">Ubicación</label>
+          <input type="text" id="ubicacion" placeholder="Ej: Cajón baño, Estante cocina" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
+        </div>
+
+        <div>
+          <label class="block text-slate-600 font-medium mb-1">Stock (unidades)</label>
+          <input required type="number" id="stock" min="0" value="1" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
+        </div>
+
+        <div>
+          <label class="block text-slate-600 font-medium mb-1">Vencimiento</label>
+          <input required type="date" id="vencimiento" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
+        </div>
+
+        <div class="sm:col-span-2">
+          <label class="block text-slate-600 font-medium mb-1">Indicaciones / Síntomas</label>
+          <input type="text" id="notas" placeholder="Ej: Fiebre, dolor muscular" class="w-full p-2.5 border rounded-lg border-slate-300 focus:ring-1 focus:ring-teal-600 focus:outline-none" />
+        </div>
+
+        <div class="sm:col-span-2 mt-2">
+          <button type="submit" class="w-full py-2.5 bg-teal-600 text-white font-medium rounded-lg hover:bg-teal-700 transition-colors shadow">
+            Guardar en el botiquín
+          </button>
+        </div>
+      </form>
+    </details>
+
+    <!-- Lista -->
+    <section>
+      <div class="flex justify-between items-center mb-3">
+        <h2 class="text-xs font-bold uppercase tracking-wider text-slate-500">Medicamentos guardados</h2>
+        <span id="med-count" class="text-xs font-semibold text-slate-400">0 ítems</span>
+      </div>
+      <div id="med-list" class="space-y-3">
+        <p class="text-sm text-slate-400 text-center py-8">Cargando datos...</p>
+      </div>
+    </section>
+
+  </main>
+
+  <script type="module">
+    import { initializeApp } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-app.js";
+    import { 
+      getFirestore, 
+      collection, 
+      onSnapshot, 
+      addDoc, 
+      updateDoc, 
+      deleteDoc, 
+      doc, 
+      serverTimestamp,
+      query,
+      orderBy
+    } from "https://www.gstatic.com/firebasejs/10.9.0/firebase-firestore.js";
+
+    // --- REEMPLAZÁ CON TU CONFIGURACIÓN DE FIREBASE ---
+    const firebaseConfig = {
+      apiKey: "TU_API_KEY",
+      authDomain: "TU_PROYECTO.firebaseapp.com",
+      projectId: "TU_PROYECTO",
+      storageBucket: "TU_PROYECTO.appspot.com",
+      messagingSenderId: "123456789",
+      appId: "1:123456789:web:abcdef"
+    };
+
+    const app = initializeApp(firebaseConfig);
+    const db = getFirestore(app);
+    const medsCollection = collection(db, "medicamentos");
+
+    let medicamentosLocales = [];
+    let html5QrCode = null;
+    let modoScanner = null; // 'search' o 'form'
+
+    // Estado del vencimiento
+    function getEstadoVencimiento(fechaISO) {
+      if (!fechaISO) return { color: "slate", label: "Sin fecha" };
+      const hoy = new Date();
+      hoy.setHours(0, 0, 0, 0);
+      const vencimiento = new Date(fechaISO + "T00:00:00");
+      const diffDias = Math.ceil((vencimiento - hoy) / (1000 * 60 * 60 * 24));
+
+      if (diffDias < 0) {
+        return { color: "red", label: `Vencido` };
+      } else if (diffDias <= 60) {
+        return { color: "amber", label: `Vence en ${diffDias} d` };
+      } else {
+        return { color: "emerald", label: `Vigente (${fechaISO.slice(0, 7)})` };
+      }
+    }
+
+    // Renderizado reactivo
+    function renderList() {
+      const listEl = document.getElementById("med-list");
+      const filtro = document.getElementById("search-input").value.toLowerCase().trim();
+
+      const itemsFiltrados = medicamentosLocales.filter(m => {
+        const texto = `${m.nombre} ${m.presentacion || ''} ${m.ubicacion || ''} ${m.notas || ''} ${m.codigo || ''}`.toLowerCase();
+        return texto.includes(filtro);
+      });
+
+      document.getElementById("med-count").textContent = `${itemsFiltrados.length} ${itemsFiltrados.length === 1 ? 'ítem' : 'ítems'}`;
+
+      if (itemsFiltrados.length === 0) {
+        listEl.innerHTML = `<div class="p-8 text-center text-sm text-slate-400 bg-white rounded-xl border border-dashed border-slate-200">No se encontraron medicamentos.</div>`;
+        return;
+      }
+
+      listEl.innerHTML = itemsFiltrados.map(m => {
+        const estado = getEstadoVencimiento(m.vencimiento);
+        const badgeColors = {
+          red: "bg-red-50 text-red-700 border-red-200",
+          amber: "bg-amber-50 text-amber-700 border-amber-200",
+          emerald: "bg-emerald-50 text-emerald-700 border-emerald-200",
+          slate: "bg-slate-50 text-slate-600 border-slate-200"
+        }[estado.color];
+
+        return `
+          <div class="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div class="space-y-1 flex-1">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="font-bold text-slate-800 text-base">${m.nombre}</span>
+                ${m.presentacion ? `<span class="text-xs text-slate-500 font-medium bg-slate-100 px-2 py-0.5 rounded">${m.presentacion}</span>` : ''}
+                <span class="text-xs font-semibold px-2 py-0.5 rounded border ${badgeColors}">
+                  ${estado.label}
+                </span>
+              </div>
+              <div class="text-xs text-slate-500 flex gap-3 flex-wrap">
+                ${m.ubicacion ? `<span>📍 ${m.ubicacion}</span>` : ''}
+                ${m.codigo ? `<span class="font-mono text-slate-400">🏷️ ${m.codigo}</span>` : ''}
+              </div>
+              ${m.notas ? `<p class="text-xs text-slate-600 italic">💡 ${m.notas}</p>` : ''}
+            </div>
+
+            <div class="flex items-center justify-between sm:justify-end gap-3 pt-2 sm:pt-0 border-t sm:border-0 border-slate-100">
+              <div class="flex items-center gap-1.5 bg-slate-100 rounded-lg p-1">
+                <button onclick="cambiarStock('${m.id}', -1)" class="w-8 h-8 flex items-center justify-center rounded bg-white text-slate-700 font-bold hover:bg-slate-200 shadow-sm transition">-</button>
+                <span class="text-sm font-bold w-9 text-center text-slate-800">${m.stock}</span>
+                <button onclick="cambiarStock('${m.id}', 1)" class="w-8 h-8 flex items-center justify-center rounded bg-white text-slate-700 font-bold hover:bg-slate-200 shadow-sm transition">+</button>
+              </div>
+              <button onclick="eliminarMed('${m.id}')" title="Eliminar" class="p-2 text-slate-300 hover:text-red-500 rounded-lg transition-colors">
+                🗑️
+              </button>
+            </div>
+          </div>
+        `;
+      }).join("");
+    }
+
+    // Suscripción Firestore
+    const q = query(medsCollection, orderBy("nombre", "asc"));
+    onSnapshot(q, (snapshot) => {
+      medicamentosLocales = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      renderList();
+    });
+
+    // Guardar nuevo medicamento
+    document.getElementById("med-form").addEventListener("submit", async (e) => {
+      e.preventDefault();
+      const form = e.target;
+      const nuevoMed = {
+        codigo: form.codigo.value.trim(),
+        nombre: form.nombre.value.trim(),
+        presentacion: form.presentacion.value.trim(),
+        ubicacion: form.ubicacion.value.trim(),
+        stock: parseInt(form.stock.value, 10) || 0,
+        vencimiento: form.vencimiento.value,
+        notas: form.notas.value.trim(),
+        createdAt: serverTimestamp()
+      };
+
+      await addDoc(medsCollection, nuevoMed);
+      form.reset();
+      document.getElementById("details-form").removeAttribute("open");
+    });
+
+    // Stock y borrado
+    window.cambiarStock = async (id, delta) => {
+      const item = medicamentosLocales.find(m => m.id === id);
+      if (!item) return;
+      const nuevoStock = Math.max(0, (item.stock || 0) + delta);
+      await updateDoc(doc(db, "medicamentos", id), { stock: nuevoStock });
+    };
+
+    window.eliminarMed = async (id) => {
+      if (confirm("¿Querés quitar este medicamento?")) {
+        await deleteDoc(doc(db, "medicamentos", id));
+      }
+    };
+
+    document.getElementById("search-input").addEventListener("input", renderList);
+
+    // --- LÓGICA DE ESCANEO DE CÓDIGO DE BARRAS ---
+    async function iniciarEscaner(modo) {
+      modoScanner = modo;
+      const modal = document.getElementById("scanner-modal");
+      modal.classList.remove("hidden");
+      modal.classList.add("flex");
+
+      if (!html5QrCode) {
+        html5QrCode = new Html5Qrcode("reader");
+      }
+
+      const config = {
+        fps: 10,
+        qrbox: { width: 250, height: 150 }, // Rectangular para código de barras
+        formatsToSupport: [
+          Html5QrcodeSupportedFormats.EAN_13,
+          Html5QrcodeSupportedFormats.EAN_8,
+          Html5QrcodeSupportedFormats.UPC_A,
+          Html5QrcodeSupportedFormats.CODE_128
+        ]
+      };
+
+      try {
+        await html5QrCode.start(
+          { facingMode: "environment" }, // Cámara trasera
+          config,
+          (decodedText) => {
+            detenerEscaner();
+            if (modoScanner === "search") {
+              const input = document.getElementById("search-input");
+              input.value = decodedText;
+              renderList();
+            } else if (modoScanner === "form") {
+              document.getElementById("codigo").value = decodedText;
+              document.getElementById("details-form").setAttribute("open", "true");
+            }
+          }
+        );
+      } catch (err) {
+        alert("No se pudo acceder a la cámara. Verificá los permisos del navegador.");
+        detenerEscaner();
+      }
+    }
+
+    async function detenerEscaner() {
+      if (html5QrCode && html5QrCode.isScanning) {
+        await html5QrCode.stop();
+      }
+      const modal = document.getElementById("scanner-modal");
+      modal.classList.add("hidden");
+      modal.classList.remove("flex");
+    }
+
+    document.getElementById("btn-scan-search").addEventListener("click", () => iniciarEscaner("search"));
+    document.getElementById("btn-scan-input").addEventListener("click", () => iniciarEscaner("form"));
+    document.getElementById("close-scanner-btn").addEventListener("click", detenerEscaner);
+  </script>
+</body>
+</html>
